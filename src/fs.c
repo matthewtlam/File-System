@@ -15,8 +15,7 @@
 
 // Debug file system -----------------------------------------------------------
 
-void fs_debug(Disk *disk)
-{
+void fs_debug(Disk *disk) {
     if (disk == 0)
         return;
 
@@ -30,8 +29,7 @@ void fs_debug(Disk *disk)
     uint32_t num_inodeBlocks = block.Super.InodeBlocks;
     uint32_t num_inodes = block.Super.Inodes;
 
-    if (magic_num != MAGIC_NUMBER)
-    {
+    if (magic_num != MAGIC_NUMBER) {
         printf("Magic number is valid: %c\n", magic_num);
         return;
     }
@@ -44,29 +42,53 @@ void fs_debug(Disk *disk)
 
     uint32_t expected_num_inodeBlocks = round((float)num_blocks / 10);
 
-    if (expected_num_inodeBlocks != num_inodeBlocks)
-    {
+    if (expected_num_inodeBlocks != num_inodeBlocks) {
         printf("SuperBlock declairs %u InodeBlocks but expect %u InodeBlocks!\n", num_inodeBlocks, expected_num_inodeBlocks);
     }
 
     uint32_t expect_num_inodes = num_inodeBlocks * INODES_PER_BLOCK;
-    if (expect_num_inodes != num_inodes)
-    {
+    if (expect_num_inodes != num_inodes) {
         printf("SuperBlock declairs %u Inodes but expect %u Inodes!\n", num_inodes, expect_num_inodes);
     }
 
-    // FIXME: Read Inode blocks
-    for (int i = 0; i < num_inodeBlocks; i++) {
-        // If the block is valid
-        //if (block.Inodes[i].Valid == 1) {
-            int inode_num = i+1;
-            uint32_t inode_size = block.Inodes[i].Size;
-            uint32_t dir_block_num = sizeof(block.Inodes[i].Direct)/sizeof(block.Inodes[i].Direct[0]);
-            
-            printf("Inode %d:\n", inode_num);
-            printf("    size: %u bytes\n", inode_size);
-            printf("    direct blocks: %u\n", dir_block_num);
-        //}
+    // Read Inode blocks
+    int idx = 0;
+    for (int i = 1; i <= num_inodeBlocks; i++) {
+        disk_read(disk, i, block.Data);
+
+        // Iterating over all the INODE_PER_BLOCK
+        for (int j = 0; j < INODES_PER_BLOCK; j++) {
+            if (block.Inodes[j].Valid) {
+                printf("Inode %d:\n", idx);
+                printf("    size: %u bytes\n", block.Inodes[i].Size);
+                printf("    direct blocks:");
+
+                // Iterating through direct nodes
+                for (int k = 0; k < POINTERS_PER_INODE; k++) {
+                    if (block.Inodes[j].Direct[k]) {
+                        printf(" %u", block.Inodes[j].Direct[k]);
+                    }
+                }
+                printf("\n");
+
+                // Iterating through indirect nodes
+                if(block.Inodes[j].Indirect) {
+                    printf("    indirect block: %u\n",block.Inodes[j].Indirect);
+                    printf("    indirect data blocks:");
+
+                    Block inDirBlock;
+                    disk_read(disk, block.Inodes[j].Indirect, inDirBlock.Data);
+
+                    for(int k = 0; k < POINTERS_PER_BLOCK; k++) {
+                        if(inDirBlock.Pointers[k]) {
+                            printf(" %u", inDirBlock.Pointers[k]);
+                        }
+                    }
+                    printf("\n");
+                }
+            }
+            idx++;
+        }
     }
 }
 
@@ -74,17 +96,26 @@ void fs_debug(Disk *disk)
 
 bool fs_format(Disk *disk)
 {
-    // Creates a new file system,
-    FileSystem *fs = new_fs();
-    if (disk->Mounts != 0) { 
+    // Checks if disk is already mounted
+    if (disk_mounted(disk)) { 
+        // Already mounted, so it fails
         return false;
     }
-    
-    // Read Superblock
 
-    // Clear all other blocks
-    
+    // Creates a new file system,
+    FileSystem *fs = new_fs();
+    fs->disk = disk;
+    printf("FD: %d \n", disk->FileDescriptor); 
+    printf("Blocks: %lu \n", disk->Blocks); 
+    printf("Reads: %lu \n", disk->Reads); 
+    printf("Writes: %lu \n", disk->Writes); 
+    printf("Mounts: %lu \n", disk->Mounts); 
 
+    // TODO: destroy any data already present
+
+    // Set 10% of blocks for inodes. clear inode table
+
+    // Writes Superblock 
     
 
     return false;
@@ -112,6 +143,9 @@ bool fs_mount(FileSystem *fs, Disk *disk)
     // Read superblock
 
     // Set device and mount
+
+    // Increment mounts
+    disk_mount(disk);
 
     // Copy metadata
 
