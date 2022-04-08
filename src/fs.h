@@ -40,8 +40,8 @@ typedef union
 typedef struct
 {
     Disk *disk;
-    
-    // FIXME: Internal member variables
+    bool *free_blocks;
+    //SuperBlock metadata;
 } FileSystem;
 
 void fs_debug(Disk *disk);
