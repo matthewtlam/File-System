@@ -40,7 +40,8 @@ typedef union
 typedef struct
 {
     Disk *disk;
-    bool *free_blocks;
+    bool *FreeBlocks;
+    int  *InodeTracker;
     //SuperBlock metadata;
 } FileSystem;
 
