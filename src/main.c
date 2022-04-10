@@ -27,18 +27,18 @@
 const char MSG_ERROR[30] = "An error has occurred\n";
 const int FUNC_COUNT = 12;
 const char * FUNC_MAP[] = {
-	"format",
-	"mount",
-	"debug",
-	"create",
-	"remove <inode>",
-	"cat <inode>",
-	"stat <inode>",
-	"copyin <file> <inode>",
-	"copyout <inode> <file>",
-	"help",
-	"quit",
-	"exit"
+    "format",
+    "mount",
+    "debug",
+    "create",
+    "remove <inode>",
+    "cat <inode>",
+    "stat <inode>",
+    "copyin <file> <inode>",
+    "copyout <inode> <file>",
+    "help",
+    "quit",
+    "exit"
 };
 
 struct job {
@@ -165,10 +165,10 @@ func_remove(struct fs *f, ssize_t inode)
 	int rt;
 
 	rt = fs_remove(f->fs, inode);
-	if (rt) 
-		fprintf(stdout, "removed inode %ld.\n", inode);
-	else
+	if (!rt) 
 		fprintf(stdout, "remove failed!\n");
+	else
+		fprintf(stdout, "removed inode %ld.\n", inode);
 
 	fflush(stdout);
 	return (0);
@@ -180,7 +180,7 @@ func_cat(struct fs *f, ssize_t inode)
 	int rt;
 
 	rt = func_copyout(f, inode, "/dev/stdout");
-	if (!rt)
+	if (rt)
 		printf("cat failed!\n");
 
 	fflush(stdout);
@@ -210,7 +210,7 @@ func_copyin(struct fs *f, char * file, ssize_t inode)
 	fp = fopen(file, "r");
 	if (fp == NULL) {
 		fprintf(stderr, "Unable to open %s.\n", file);
-		return (0);
+		return (1);
 	}
 
 	while (true) {
@@ -240,7 +240,7 @@ func_copyout(struct fs *f, ssize_t inode, char * file)
 	fp = fopen(file, "w");
 	if (fp == NULL) {
 		fprintf(stderr, "Unable to open %s.\n", file);
-		return false;
+		return (1);
 	}
 
 	while (true) {
@@ -267,7 +267,7 @@ func_copyout(struct fs *f, ssize_t inode, char * file)
 	}
 
 	fclose(fp);
-	return true;
+	return (0);
 }
 
 int
@@ -281,7 +281,6 @@ func_exit(struct fs *f, struct job *job)
 int 
 func_help()
 {
-    write(2, "Commands are:\n", strlen("Commands are:\n"));
 	for (int i=0;i<FUNC_COUNT;i++) {
 		write(2, FUNC_MAP[i], strlen(FUNC_MAP[i]));
 		//if (i < FUNC_COUNT - 1)
@@ -378,7 +377,6 @@ main(int argc, char ** argv)
 		disk_fn = argv[1];
 		disk_blk = atoi(argv[2]);
 	} else {
-        write(2, "Usage: ./sfssh DISK_IMAGE NUMBER_OF_BLOCKS\n", strlen("Usage: ./sfssh DISK_IMAGE NUMBER_OF_BLOCKS\n"));
 		goto error_exit;
 	}
 

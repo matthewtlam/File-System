@@ -41,8 +41,6 @@ typedef struct
 {
     Disk *disk;
     bool *FreeBlocks;
-    int  *InodeTracker;
-    //SuperBlock metadata;
 } FileSystem;
 
 void fs_debug(Disk *disk);
