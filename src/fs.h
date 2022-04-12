@@ -40,7 +40,10 @@ typedef union
 typedef struct
 {
     Disk *disk;
-    bool *FreeBlocks;
+    bool *bitmap;
+    int  *inodeTracker;
+    SuperBlock metadata;
+
 } FileSystem;
 
 void fs_debug(Disk *disk);
