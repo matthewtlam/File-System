@@ -58,5 +58,5 @@ ssize_t fs_create(FileSystem *fs);
 bool fs_remove(FileSystem *fs, size_t inumber);
 ssize_t fs_stat(FileSystem *fs, size_t inumber);
 
-ssize_t fs_read(FileSystem *fs, size_t inumber, char *data, size_t length, size_t offset);
+ssize_t fs_read(FileSystem *fs, size_t inumber, char *data, int length, size_t offset);
 ssize_t fs_write(FileSystem *fs, size_t inumber, char *data, size_t length, size_t offset);
