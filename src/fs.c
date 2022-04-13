@@ -117,7 +117,6 @@ bool fs_format(Disk *disk) {
     disk_write(disk, 0, block.Data);
 
     Block inodeBlock;
-    // memset(dataBlock.Data, 0, BLOCK_SIZE);
     for(int j = 0; j < INODES_PER_BLOCK; j++){
         inodeBlock.Inodes[j].Valid = false;
         inodeBlock.Inodes[j].Size = 0;
@@ -149,6 +148,7 @@ bool fs_format(Disk *disk) {
 FileSystem *new_fs() {
     FileSystem *fs = malloc(sizeof(FileSystem));
     fs->bitmap = NULL;
+    fs->inodeTracker = NULL;
     fs->disk = NULL;
     return fs;
 }
@@ -156,7 +156,7 @@ FileSystem *new_fs() {
 // FileSystem destructor 
 void free_fs(FileSystem *fs) {
     // FIXME: free resources and allocated memory in FileSystem
-
+    free(fs->inodeTracker);
     free(fs->bitmap);
     free(fs);
 }
@@ -185,21 +185,21 @@ bool fs_mount(FileSystem *fs, Disk *disk) {
     fs->metadata = block.Super;
 
     // Allocate inode tracker
-    fs->inodeTracker = malloc(block.Super.InodeBlocks);
-    for (int i = 0; i < block.Super.InodeBlocks; i++) {
+    fs->inodeTracker = malloc(fs->metadata.InodeBlocks);
+    for (int i = 0; i < fs->metadata.InodeBlocks; i++) {
         fs->inodeTracker[i] = 0;
     }
 
     // Allocate free block bitmap
-    fs->bitmap = malloc(block.Super.Blocks);
-    for (int i = 0; i < block.Super.Blocks; i++) {
+    fs->bitmap = malloc(fs->metadata.Blocks);
+    for (int i = 0; i < fs->metadata.Blocks; i++) {
         fs->bitmap[i] = false;
     }
 
     fs->bitmap[0] = true;
 
     // Reading inode blocks
-    for (int i = 1; i <= block.Super.InodeBlocks; i++) {
+    for (int i = 1; i <= fs->metadata.InodeBlocks; i++) {
         Block inodeBlock;
         disk_read(disk, i, inodeBlock.Data);
 
@@ -211,7 +211,7 @@ bool fs_mount(FileSystem *fs, Disk *disk) {
 
                 // Set bitmap for direct pointers
                 for (int k = 0; k < POINTERS_PER_INODE; k++) {
-                    if (inodeBlock.Inodes[j].Direct[k] && inodeBlock.Inodes[j].Direct[k] < block.Super.Blocks) {
+                    if (inodeBlock.Inodes[j].Direct[k] && inodeBlock.Inodes[j].Direct[k] < fs->metadata.Blocks) {
                         fs->bitmap[inodeBlock.Inodes[j].Direct[k]] = true;
                     }
                     else if (inodeBlock.Inodes[j].Direct[k]) {
@@ -220,13 +220,13 @@ bool fs_mount(FileSystem *fs, Disk *disk) {
                 }
 
                 // Set bitmap for indirect pointers
-                if (inodeBlock.Inodes[j].Indirect && inodeBlock.Inodes[j].Indirect < block.Super.Blocks) {
+                if (inodeBlock.Inodes[j].Indirect && inodeBlock.Inodes[j].Indirect < fs->metadata.Blocks) {
 
                     fs->bitmap[inodeBlock.Inodes[j].Indirect] = true;
                     Block inDirBlock;
                     disk_read(fs->disk, inodeBlock.Inodes[j].Indirect, inDirBlock.Data);
                     for (int k = 0; k < POINTERS_PER_BLOCK; k++) {
-                        if (inDirBlock.Pointers[k] < block.Super.Blocks) {
+                        if (inDirBlock.Pointers[k] < fs->metadata.Blocks) {
                             fs->bitmap[inDirBlock.Pointers[k]] = true;
                         }
                         else {
@@ -284,7 +284,6 @@ ssize_t fs_create(FileSystem *fs) {
                 disk_write(fs->disk, i, block.Data);
 
                 return (i-1) * INODES_PER_BLOCK + j;
-                //return i * INODES_PER_BLOCK + j;
             }
         }
     }
@@ -293,33 +292,18 @@ ssize_t fs_create(FileSystem *fs) {
 }
 
 bool find_inode(FileSystem *fs, size_t inumber, Inode *inode) {
-
-    if (!disk_mounted(fs->disk)) {
-        return false;
-    }
-
-    // Read from Superblock
-    Block block;
-    disk_write(fs->disk, 0, block.Data);
-
-    if ((inumber < 0) || (inumber > fs->metadata.Inodes)) {
-        return false;
-    }
     
-    if (!fs->inodeTracker[inumber / INODES_PER_BLOCK]) {
+    if (!disk_mounted(fs->disk) || inumber < 0 || inumber > fs->metadata.Inodes || !fs->inodeTracker[inumber / INODES_PER_BLOCK]) {
         return false;
     }
 
-    disk_read(fs->disk, (int)(inumber / INODES_PER_BLOCK) + 1, block.Data);
-    if (block.Inodes[(inumber % INODES_PER_BLOCK)].Valid) {
-        printf("Condition1.5 \n");
-
+    Block block;
+    disk_read(fs->disk, inumber / INODES_PER_BLOCK + 1, block.Data);
+    if (block.Inodes[inumber % INODES_PER_BLOCK].Valid) {
         *inode = block.Inodes[inumber % INODES_PER_BLOCK];
-        printf("Condition2\n");
         return true;
     }
 
-    printf("Condition3\n");
     return false;
 }
 
@@ -336,50 +320,33 @@ bool store_inode(FileSystem *fs, size_t inumber, Inode *inode) {
 
 bool fs_remove(FileSystem *fs, size_t inumber) {
     
-    if (!disk_mounted(fs->disk)) {
-        return false;
-    }
-
     // Load inode information
-    Inode * inode = NULL;
+    Inode inode;
 
-    if (!find_inode(fs, inumber+1, inode)) {
+    if (!disk_mounted(fs->disk) || !find_inode(fs, inumber, &inode)) {
         return false;
     }
 
-    inode->Valid = false;
-    inode->Size = 0;
+    inode.Valid = false;
+    inode.Size = 0;
 
     // Set the free blocks array appropriately
-    /*
-    Block block;
-    disk_read(fs->disk, (int)(inumber / INODES_PER_BLOCK) + 1, block.Data);
-    int validInodeCounter = 0;
-
-    for(int i = 0; i < INODES_PER_BLOCK; i++) {
-        if(block.Inodes[i].Valid) {
-            validInodeCounter++;
-        }
-    }
-
-    if (validInodeCounter == 0) {
-        fs->bitmap[inumber / INODES_PER_BLOCK + 1] = false;
-    }
-    */
     if (!(--fs->inodeTracker[inumber / INODES_PER_BLOCK])) {
         fs->bitmap[inumber / INODES_PER_BLOCK + 1] = false;
     }
 
     // Free direct blocks
     for (int i = 0; i < POINTERS_PER_INODE; i++) {
-        fs->bitmap[inode->Direct[i]] = false;
+        fs->bitmap[inode.Direct[i]] = false;
+        inode.Direct[i] = 0;
     }
 
     // Free indirect blocks
-    if (inode->Indirect) {
-        fs->bitmap[inode->Indirect] = false;
+    if (inode.Indirect) {
+        fs->bitmap[inode.Indirect] = false;
         Block inDirBlock;
-        disk_read(fs->disk, inode->Indirect, inDirBlock.Data);
+        disk_read(fs->disk, inode.Indirect, inDirBlock.Data);
+        inode.Indirect = 0;
 
         for (int i = 0; i < POINTERS_PER_BLOCK; i++) {
             uint32_t inDirBlockPtr = inDirBlock.Pointers[i];
@@ -388,19 +355,10 @@ bool fs_remove(FileSystem *fs, size_t inumber) {
             }
         }
     }
-        
-    // Clear inode in inode table
-    for (int i = 0; i < POINTERS_PER_INODE; i++) {
-        inode->Direct[i] = 0;
-    }
-
-    if (inode->Indirect) {
-        inode->Indirect = 0;
-    }
 
     Block block;
     disk_read(fs->disk, inumber / INODES_PER_BLOCK + 1, block.Data);
-    block.Inodes[inumber & INODES_PER_BLOCK] = *inode;
+    block.Inodes[inumber % INODES_PER_BLOCK] = inode;
     disk_write(fs->disk, inumber / INODES_PER_BLOCK + 1, block.Data);
 
     return true;
@@ -415,10 +373,10 @@ ssize_t fs_stat(FileSystem *fs, size_t inumber) {
     }
 
     // Load inode information
-    Inode * inode = NULL;
+    Inode inode;
     
-    if (find_inode(fs, inumber, inode)) {
-        return inode->Size;
+    if (find_inode(fs, inumber, &inode)) {
+        return inode.Size;
     }
 
     return -1;
